@@ -228,7 +228,17 @@ impl TcpListener {
     /// from a future driven by a tokio runtime, otherwise runtime can be set
     /// explicitly with [`Runtime::enter`](crate::runtime::Runtime::enter) function.
     #[track_caller]
+    #[cfg(not(target_os = "wasi"))]
     pub fn from_std(listener: net::TcpListener) -> io::Result<TcpListener> {
+        let io = mio::net::TcpListener::from_std(listener);
+        let io = PollEvented::new(io)?;
+        Ok(TcpListener { io })
+    }
+
+    /// Creates new `TcpListener` from a `std::net::TcpListener`.
+    ///
+    #[cfg(target_os = "wasi")]
+    pub fn from_std(listener: wasmedge_wasi_socket::TcpListener) -> io::Result<TcpListener> {
         let io = mio::net::TcpListener::from_std(listener);
         let io = PollEvented::new(io)?;
         Ok(TcpListener { io })
@@ -256,6 +266,7 @@ impl TcpListener {
     /// [`tokio::net::TcpListener`]: TcpListener
     /// [`std::net::TcpListener`]: std::net::TcpListener
     /// [`set_nonblocking`]: fn@std::net::TcpListener::set_nonblocking
+    #[cfg(not(target_os = "wasi"))]
     pub fn into_std(self) -> io::Result<std::net::TcpListener> {
         #[cfg(unix)]
         {
@@ -315,6 +326,13 @@ impl TcpListener {
     ///     Ok(())
     /// }
     /// ```
+    #[cfg(not(target_os = "wasi"))]
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.io.local_addr()
+    }
+
+    /// Returns the local address that this listener is bound to.
+    #[cfg(target_os = "wasi")]
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.io.local_addr()
     }
@@ -371,7 +389,7 @@ impl TcpListener {
         self.io.set_ttl(ttl)
     }
 }
-
+#[cfg(not(target_os = "wasi"))]
 impl TryFrom<net::TcpListener> for TcpListener {
     type Error = io::Error;
 

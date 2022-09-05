@@ -39,8 +39,8 @@ cfg_net! {
     cfg_not_wasi! {
         pub use tcp::socket::TcpSocket;
 
-        mod udp;
-        pub use udp::UdpSocket;
+        // mod udp;
+        // pub use udp::UdpSocket;
     }
 }
 

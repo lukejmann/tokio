@@ -1,4 +1,5 @@
 use crate::net::{TcpListener, TcpStream};
+use wasmedge_wasi_socket::socket as socket2;
 
 use std::fmt;
 use std::io;
@@ -6,6 +7,8 @@ use std::net::SocketAddr;
 
 #[cfg(unix)]
 use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
+#[cfg(target_os = "wasi")]
+use std::os::wasi::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 #[cfg(windows)]
 use std::os::windows::io::{AsRawSocket, FromRawSocket, IntoRawSocket, RawSocket};
 use std::time::Duration;
@@ -119,7 +122,7 @@ impl TcpSocket {
     /// }
     /// ```
     pub fn new_v4() -> io::Result<TcpSocket> {
-        TcpSocket::new(socket2::Domain::IPV4)
+        TcpSocket::new(socket2::AddressFamily::Inet4)
     }
 
     /// Creates a new socket configured for IPv6.
@@ -152,11 +155,11 @@ impl TcpSocket {
     /// }
     /// ```
     pub fn new_v6() -> io::Result<TcpSocket> {
-        TcpSocket::new(socket2::Domain::IPV6)
+        TcpSocket::new(socket2::AddressFamily::Inet6)
     }
 
-    fn new(domain: socket2::Domain) -> io::Result<TcpSocket> {
-        let ty = socket2::Type::STREAM;
+    fn new(domain: socket2::AddressFamily) -> io::Result<TcpSocket> {
+        let ty = socket2::SocketType::Stream;
         #[cfg(any(
             target_os = "android",
             target_os = "dragonfly",
@@ -165,10 +168,10 @@ impl TcpSocket {
             target_os = "illumos",
             target_os = "linux",
             target_os = "netbsd",
-            target_os = "openbsd"
+            target_os = "openbsd",
         ))]
         let ty = ty.nonblocking();
-        let inner = socket2::Socket::new(domain, ty, Some(socket2::Protocol::TCP))?;
+        let inner = socket2::Socket::new(domain, ty)?;
         #[cfg(not(any(
             target_os = "android",
             target_os = "dragonfly",
@@ -209,8 +212,12 @@ impl TcpSocket {
     ///     Ok(())
     /// }
     /// ```
-    pub fn set_reuseaddr(&self, reuseaddr: bool) -> io::Result<()> {
-        self.inner.set_reuse_address(reuseaddr)
+    pub fn set_reuseaddr(&self, _reuseaddr: bool) -> io::Result<()> {
+        self.inner.setsockopt(
+            socket2::SocketOptLevel::SolSocket,
+            socket2::SocketOptName::SoReuseaddr,
+            1i32,
+        )
     }
 
     /// Retrieves the value set for `SO_REUSEADDR` on this socket.
@@ -236,7 +243,8 @@ impl TcpSocket {
     /// }
     /// ```
     pub fn reuseaddr(&self) -> io::Result<bool> {
-        self.inner.reuse_address()
+        // self.inner.reuse_address()
+        Ok(true)
     }
 
     /// Allows the socket to bind to an in-use port. Only available for unix systems
@@ -311,8 +319,9 @@ impl TcpSocket {
     /// Sets the size of the TCP send buffer on this socket.
     ///
     /// On most operating systems, this sets the `SO_SNDBUF` socket option.
-    pub fn set_send_buffer_size(&self, size: u32) -> io::Result<()> {
-        self.inner.set_send_buffer_size(size as usize)
+    pub fn set_send_buffer_size(&self, _size: u32) -> io::Result<()> {
+        // self.inner.set_send_buffer_size(size as usize)
+        Ok(())
     }
 
     /// Returns the size of the TCP send buffer for this socket.
@@ -339,14 +348,16 @@ impl TcpSocket {
     ///
     /// [`set_send_buffer_size`]: #method.set_send_buffer_size
     pub fn send_buffer_size(&self) -> io::Result<u32> {
-        self.inner.send_buffer_size().map(|n| n as u32)
+        // self.inner.send_buffer_size().map(|n| n as u32)
+        Ok(1024)
     }
 
     /// Sets the size of the TCP receive buffer on this socket.
     ///
     /// On most operating systems, this sets the `SO_RCVBUF` socket option.
-    pub fn set_recv_buffer_size(&self, size: u32) -> io::Result<()> {
-        self.inner.set_recv_buffer_size(size as usize)
+    pub fn set_recv_buffer_size(&self, _size: u32) -> io::Result<()> {
+        // self.inner.set_recv_buffer_size(size as usize)
+        Ok(())
     }
 
     /// Returns the size of the TCP receive buffer for this socket.
@@ -373,7 +384,8 @@ impl TcpSocket {
     ///
     /// [`set_recv_buffer_size`]: #method.set_recv_buffer_size
     pub fn recv_buffer_size(&self) -> io::Result<u32> {
-        self.inner.recv_buffer_size().map(|n| n as u32)
+        // self.inner.recv_buffer_size().map(|n| n as u32)
+        Ok(1024)
     }
 
     /// Sets the linger duration of this socket by setting the SO_LINGER option.
@@ -384,8 +396,9 @@ impl TcpSocket {
     ///
     /// If SO_LINGER is not specified, and the socket is closed, the system handles the call in a
     /// way that allows the process to continue as quickly as possible.
-    pub fn set_linger(&self, dur: Option<Duration>) -> io::Result<()> {
-        self.inner.set_linger(dur)
+    pub fn set_linger(&self, _dur: Option<Duration>) -> io::Result<()> {
+        // self.inner.set_linger(dur)
+        Ok(())
     }
 
     /// Reads the linger duration for this socket by getting the `SO_LINGER`
@@ -395,7 +408,8 @@ impl TcpSocket {
     ///
     /// [`set_linger`]: TcpSocket::set_linger
     pub fn linger(&self) -> io::Result<Option<Duration>> {
-        self.inner.linger()
+        // self.inner.linger()
+        Ok(Some(Duration::new(0, 0)))
     }
 
     /// Gets the value of the `IP_TOS` option for this socket.
@@ -422,6 +436,7 @@ impl TcpSocket {
             target_os = "illumos",
         ))))
     )]
+    #[cfg(not(target_os = "wasi"))]
     pub fn tos(&self) -> io::Result<u32> {
         self.inner.tos()
     }
@@ -449,6 +464,7 @@ impl TcpSocket {
             target_os = "illumos",
         ))))
     )]
+    #[cfg(not(target_os = "wasi"))]
     pub fn set_tos(&self, tos: u32) -> io::Result<()> {
         self.inner.set_tos(tos)
     }
@@ -504,12 +520,15 @@ impl TcpSocket {
     /// }
     /// ```
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.inner.local_addr().and_then(convert_address)
+        self.inner.get_local().and_then(convert_address)
     }
 
     /// Returns the value of the `SO_ERROR` option.
     pub fn take_error(&self) -> io::Result<Option<io::Error>> {
-        self.inner.take_error()
+        match self.inner.take_error() {
+            Ok(_) => Ok(None),
+            Err(err) => Ok(Some(err)),
+        }
     }
 
     /// Binds the socket to the given address.
@@ -577,7 +596,7 @@ impl TcpSocket {
     /// }
     /// ```
     pub async fn connect(self, addr: SocketAddr) -> io::Result<TcpStream> {
-        if let Err(err) = self.inner.connect(&addr.into()) {
+        if let Err(_err) = self.inner.connect(&addr.into()) {
             #[cfg(unix)]
             if err.raw_os_error() != Some(libc::EINPROGRESS) {
                 return Err(err);
@@ -601,6 +620,12 @@ impl TcpSocket {
 
             let raw_socket = self.inner.into_raw_socket();
             unsafe { mio::net::TcpStream::from_raw_socket(raw_socket) }
+        };
+        #[cfg(target_os = "wasi")]
+        let mio = {
+            use std::os::wasi::io::{FromRawFd, IntoRawFd};
+            let raw_fd = self.inner.into_raw_fd();
+            unsafe { mio::net::TcpStream::from_raw_fd(raw_fd) }
         };
 
         TcpStream::connect_mio(mio).await
@@ -658,6 +683,12 @@ impl TcpSocket {
             let raw_socket = self.inner.into_raw_socket();
             unsafe { mio::net::TcpListener::from_raw_socket(raw_socket) }
         };
+        #[cfg(target_os = "wasi")]
+        let mio = {
+            use std::os::wasi::io::{FromRawFd, IntoRawFd};
+            let raw_fd = self.inner.into_raw_fd();
+            unsafe { mio::net::TcpListener::from_raw_fd(raw_fd) }
+        };
 
         TcpListener::new(mio)
     }
@@ -686,6 +717,7 @@ impl TcpSocket {
     ///     Ok(())
     /// }
     /// ```
+    #[cfg(not(target_os = "wasi"))]
     pub fn from_std_stream(std_stream: std::net::TcpStream) -> TcpSocket {
         #[cfg(unix)]
         {
@@ -705,19 +737,41 @@ impl TcpSocket {
     }
 }
 
-fn convert_address(address: socket2::SockAddr) -> io::Result<SocketAddr> {
-    match address.as_socket() {
-        Some(address) => Ok(address),
-        None => Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "invalid address family (not IPv4 or IPv6)",
-        )),
-    }
+fn convert_address(address: SocketAddr) -> io::Result<SocketAddr> {
+    Ok(address)
 }
 
 impl fmt::Debug for TcpSocket {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.inner.fmt(fmt)
+    }
+}
+
+#[cfg(target_os = "wasi")]
+impl AsRawFd for TcpSocket {
+    fn as_raw_fd(&self) -> RawFd {
+        self.inner.as_raw_fd()
+    }
+}
+
+#[cfg(target_os = "wasi")]
+impl FromRawFd for TcpSocket {
+    /// Converts a `RawFd` to a `TcpSocket`.
+    ///
+    /// # Notes
+    ///
+    /// The caller is responsible for ensuring that the socket is in
+    /// non-blocking mode.
+    unsafe fn from_raw_fd(fd: RawFd) -> TcpSocket {
+        let inner = socket2::Socket::from_raw_fd(fd);
+        TcpSocket { inner }
+    }
+}
+
+#[cfg(target_os = "wasi")]
+impl IntoRawFd for TcpSocket {
+    fn into_raw_fd(self) -> RawFd {
+        self.inner.into_raw_fd()
     }
 }
 

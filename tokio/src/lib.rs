@@ -434,32 +434,32 @@ compile_error! {
 //
 // Each condition is written all(a, not(b)). This should be read as
 // "if a, then we must also have b".
-#[cfg(any(
-    all(target_arch = "wasm32", not(tokio_wasm)),
-    all(target_arch = "wasm64", not(tokio_wasm)),
-    all(target_family = "wasm", not(tokio_wasm)),
-    all(target_os = "wasi", not(tokio_wasm)),
-    all(target_os = "wasi", not(tokio_wasi)),
-    all(target_os = "wasi", tokio_wasm_not_wasi),
-    all(tokio_wasm, not(any(target_arch = "wasm32", target_arch = "wasm64"))),
-    all(tokio_wasm_not_wasi, not(tokio_wasm)),
-    all(tokio_wasi, not(tokio_wasm))
-))]
-compile_error!("Tokio's build script has incorrectly detected wasm.");
+// #[cfg(any(
+//     all(target_arch = "wasm32", not(tokio_wasm)),
+//     all(target_arch = "wasm64", not(tokio_wasm)),
+//     all(target_family = "wasm", not(tokio_wasm)),
+//     all(target_os = "wasi", not(tokio_wasm)),
+//     all(target_os = "wasi", not(tokio_wasi)),
+//     all(target_os = "wasi", tokio_wasm_not_wasi),
+//     all(tokio_wasm, not(any(target_arch = "wasm32", target_arch = "wasm64"))),
+//     all(tokio_wasm_not_wasi, not(tokio_wasm)),
+//     all(tokio_wasi, not(tokio_wasm))
+// ))]
+// compile_error!("Tokio's build script has incorrectly detected wasm.");
 
-#[cfg(all(
-    not(tokio_unstable),
-    tokio_wasm,
-    any(
-        feature = "fs",
-        feature = "io-std",
-        feature = "net",
-        feature = "process",
-        feature = "rt-multi-thread",
-        feature = "signal"
-    )
-))]
-compile_error!("Only features sync,macros,io-util,rt,time are supported on wasm.");
+// #[cfg(all(
+//     not(tokio_unstable),
+//     tokio_wasm,
+//     any(
+//         feature = "fs",
+//         feature = "io-std",
+//         feature = "net",
+//         feature = "process",
+//         feature = "rt-multi-thread",
+//         feature = "signal"
+//     )
+// ))]
+// compile_error!("Only features sync,macros,io-util,rt,time are supported on wasm.");
 
 // Includes re-exports used by macros.
 //
@@ -481,6 +481,7 @@ pub mod net;
 mod loom;
 mod park;
 
+#[cfg(not(target_os = "wasi"))]
 cfg_process! {
     pub mod process;
 }
@@ -504,10 +505,12 @@ cfg_not_rt! {
 
 pub(crate) mod coop;
 
+#[cfg(not(target_os = "wasi"))]
 cfg_signal! {
     pub mod signal;
 }
 
+#[cfg(not(target_os = "wasi"))]
 cfg_signal_internal! {
     #[cfg(not(feature = "signal"))]
     #[allow(dead_code)]
