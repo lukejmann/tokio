@@ -2,12 +2,14 @@
 
 members = [
   "tokio",
+]
+exclude = [
   "tokio-macros",
   "tokio-test",
   "tokio-stream",
   "tokio-util",
 
-  # Internal
+    # Internal
   "benches",
   "examples",
   "stress-test",

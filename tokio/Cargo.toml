@@ -1,5 +1,5 @@
 [package]
-name = "tokio"
+name = "tokio_wasi"
 # When releasing to crates.io:
 # - Remove path dependencies
 # - Update doc url
@@ -12,14 +12,18 @@ rust-version = "1.49"
 authors = ["Tokio Contributors <team@tokio.rs>"]
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/tokio-rs/tokio"
-homepage = "https://tokio.rs"
+repository = "https://github.com/WasmEdge/tokio"
+homepage = "https://github.com/WasmEdge/tokio"
 description = """
 An event-driven, non-blocking I/O platform for writing asynchronous I/O
 backed applications.
 """
 categories = ["asynchronous", "network-programming"]
-keywords = ["io", "async", "non-blocking", "futures"]
+keywords = ["io", "async", "non-blocking", "futures", "wasi"]
+
+[lib]
+name = "tokio"
+path = "src/lib.rs"
 
 [features]
 # Include nothing by default
@@ -48,9 +52,9 @@ io-std = []
 macros = ["tokio-macros"]
 net = [
   "libc",
-  "mio/os-poll",
-  "mio/os-ext",
-  "mio/net",
+  "mio_wasi/os-poll",
+  "mio_wasi/os-ext",
+  "mio_wasi/net",
   "socket2",
   "winapi/fileapi",
   "winapi/handleapi",
@@ -64,9 +68,9 @@ net = [
 process = [
   "bytes",
   "libc",
-  "mio/os-poll",
-  "mio/os-ext",
-  "mio/net",
+  "mio_wasi/os-poll",
+  "mio_wasi/os-ext",
+  "mio_wasi/net",
   "signal-hook-registry",
   "winapi/handleapi",
   "winapi/minwindef",
@@ -83,9 +87,9 @@ rt-multi-thread = [
 ]
 signal = [
   "libc",
-  "mio/os-poll",
-  "mio/net",
-  "mio/os-ext",
+  "mio_wasi/os-poll",
+  "mio_wasi/net",
+  "mio_wasi/os-ext",
   "signal-hook-registry",
   "winapi/consoleapi",
   "winapi/wincon",
@@ -104,14 +108,14 @@ stats = []
 autocfg = "1.1"
 
 [dependencies]
-tokio-macros = { version = "1.7.0", path = "../tokio-macros", optional = true }
+tokio-macros = { version = "1.7.0", optional = true }
 
 pin-project-lite = "0.2.0"
 
 # Everything else is optional...
 bytes = { version = "1.0.0", optional = true }
 memchr = { version = "2.2", optional = true }
-mio = {git="https://github.com/WasmEdge/mio.git", optional = true, features = ["wasmedge", "os-poll", "net"] }
+mio_wasi = {version="0.8.4", optional = true, features = ["wasmedge", "os-poll", "net"] }
 num_cpus = { version = "1.8.0", optional = true }
 parking_lot = { version = "0.12.0", optional = true }
 
@@ -141,8 +145,8 @@ optional = true
 version = "0.3.6"
 
 [dev-dependencies]
-tokio-test = { version = "0.4.0", path = "../tokio-test" }
-tokio-stream = { version = "0.1", path = "../tokio-stream" }
+tokio-test = { version = "0.4.0"}
+tokio-stream = { version = "0.1"}
 futures = { version = "0.3.0", features = ["async-await"] }
 mockall = "0.11.1"
 tempfile = "3.1.0"
@@ -158,7 +162,7 @@ rand = "0.8.0"
 [target.'cfg(all(any(target_arch = "wasm32", target_arch = "wasm64"), not(target_os = "wasi")))'.dev-dependencies]
 wasm-bindgen-test = "0.3.0"
 [target.'cfg(target_os = "wasi")'.dependencies]
-wasmedge_wasi_socket = {git="https://github.com/second-state/wasmedge_wasi_socket.git"}
+wasmedge_wasi_socket = "0.4.2"
 
 [target.'cfg(target_os = "freebsd")'.dev-dependencies]
 mio-aio = { version = "0.6.0", features = ["tokio"] }
