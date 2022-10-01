@@ -2,12 +2,12 @@
 
 members = [
   "tokio",
+  "tokio-util",
 ]
 exclude = [
   "tokio-macros",
   "tokio-test",
   "tokio-stream",
-  "tokio-util",
 
     # Internal
   "benches",
