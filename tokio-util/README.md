@@ -1,6 +1,6 @@
-# tokio-util
+# tokio-util_wasi
 
-Utilities for working with Tokio.
+Utilities for working with Tokio in the WebAssembly environment.
 
 ## License
 
