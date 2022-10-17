@@ -2,6 +2,7 @@
 
 members = [
   "tokio",
+  "examples",
   "tokio-util",
 ]
 exclude = [
@@ -11,7 +12,6 @@ exclude = [
 
     # Internal
   "benches",
-  "examples",
   "stress-test",
   "tests-build",
   "tests-integration",
