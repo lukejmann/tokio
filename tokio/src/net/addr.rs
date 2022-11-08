@@ -179,6 +179,29 @@ cfg_net! {
             // Run DNS lookup on the blocking pool
             let s = self.to_owned();
 
+            #[cfg(target_os = "wasi")]
+            {
+                use std::io::{Error, ErrorKind};
+                MaybeReady(sealed::State::Blocking(crate::spawn(async move {
+                    let host_and_port = s.split(":").collect::<Vec<&str>>();
+                    if host_and_port.len() != 2 {
+                        return Err(Error::new(
+                            ErrorKind::InvalidInput,
+                            "invalid socket address",
+                        ));
+                    }
+                    let host = host_and_port[0];
+                    let port = str::parse::<u16>(host_and_port[1])
+                        .map_err(|e| Error::new(ErrorKind::InvalidInput, "invalid port value"))?;
+                    let mut addrs = wasmedge_wasi_socket::nslookup(host, "http")?;
+                    for addr in addrs.iter_mut() {
+                        addr.set_port(port);
+                    }
+                    Ok(addrs.into_iter())
+                })))
+            }
+
+            #[cfg(not(target_os = "wasi"))]
             MaybeReady(sealed::State::Blocking(spawn_blocking(move || {
                 std::net::ToSocketAddrs::to_socket_addrs(&s)
             })))
@@ -216,6 +239,18 @@ cfg_net! {
 
             let host = host.to_owned();
 
+            #[cfg(target_os = "wasi")]
+            {
+                MaybeReady(sealed::State::Blocking(crate::spawn(async move {
+                    let mut addrs = wasmedge_wasi_socket::nslookup(&host, "http")?;
+                    for addr in addrs.iter_mut() {
+                        addr.set_port(port);
+                    }
+                    Ok(addrs.into_iter())
+                })))
+            }
+
+            #[cfg(not(target_os = "wasi"))]
             MaybeReady(sealed::State::Blocking(spawn_blocking(move || {
                 std::net::ToSocketAddrs::to_socket_addrs(&(&host[..], port))
             })))
