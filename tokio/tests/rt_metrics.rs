@@ -1,6 +1,8 @@
 #![warn(rust_2018_idioms)]
 #![cfg(all(feature = "full", tokio_unstable, not(tokio_wasi)))]
 
+use std::sync::{Arc, Mutex};
+
 use tokio::runtime::Runtime;
 use tokio::time::{self, Duration};
 
@@ -11,6 +13,68 @@ fn num_workers() {
 
     let rt = threaded();
     assert_eq!(2, rt.metrics().num_workers());
+}
+
+#[test]
+fn num_blocking_threads() {
+    let rt = current_thread();
+    assert_eq!(0, rt.metrics().num_blocking_threads());
+    let _ = rt.block_on(rt.spawn_blocking(move || {}));
+    assert_eq!(1, rt.metrics().num_blocking_threads());
+}
+
+#[test]
+fn num_idle_blocking_threads() {
+    let rt = current_thread();
+    assert_eq!(0, rt.metrics().num_idle_blocking_threads());
+    let _ = rt.block_on(rt.spawn_blocking(move || {}));
+    rt.block_on(async {
+        time::sleep(Duration::from_millis(5)).await;
+    });
+
+    // We need to wait until the blocking thread has become idle. Usually 5ms is
+    // enough for this to happen, but not always. When it isn't enough, sleep
+    // for another second. We don't always wait for a whole second since we want
+    // the test suite to finish quickly.
+    //
+    // Note that the timeout for idle threads to be killed is 10 seconds.
+    if 0 == rt.metrics().num_idle_blocking_threads() {
+        rt.block_on(async {
+            time::sleep(Duration::from_secs(1)).await;
+        });
+    }
+
+    assert_eq!(1, rt.metrics().num_idle_blocking_threads());
+}
+
+#[test]
+fn blocking_queue_depth() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+
+    assert_eq!(0, rt.metrics().blocking_queue_depth());
+
+    let ready = Arc::new(Mutex::new(()));
+    let guard = ready.lock().unwrap();
+
+    let ready_cloned = ready.clone();
+    let wait_until_ready = move || {
+        let _unused = ready_cloned.lock().unwrap();
+    };
+
+    let h1 = rt.spawn_blocking(wait_until_ready.clone());
+    let h2 = rt.spawn_blocking(wait_until_ready);
+    assert!(rt.metrics().blocking_queue_depth() > 0);
+
+    drop(guard);
+
+    let _ = rt.block_on(h1);
+    let _ = rt.block_on(h2);
+
+    assert_eq!(0, rt.metrics().blocking_queue_depth());
 }
 
 #[test]
@@ -54,7 +118,7 @@ fn worker_park_count() {
         time::sleep(Duration::from_millis(1)).await;
     });
     drop(rt);
-    assert!(2 <= metrics.worker_park_count(0));
+    assert!(1 <= metrics.worker_park_count(0));
 
     let rt = threaded();
     let metrics = rt.metrics();
@@ -375,20 +439,18 @@ fn io_driver_fd_count() {
     let rt = current_thread();
     let metrics = rt.metrics();
 
-    // Since this is enabled w/ the process driver we always
-    // have 1 fd registered.
-    assert_eq!(metrics.io_driver_fd_registered_count(), 1);
+    assert_eq!(metrics.io_driver_fd_registered_count(), 0);
 
     let stream = tokio::net::TcpStream::connect("google.com:80");
     let stream = rt.block_on(async move { stream.await.unwrap() });
 
-    assert_eq!(metrics.io_driver_fd_registered_count(), 2);
+    assert_eq!(metrics.io_driver_fd_registered_count(), 1);
     assert_eq!(metrics.io_driver_fd_deregistered_count(), 0);
 
     drop(stream);
 
     assert_eq!(metrics.io_driver_fd_deregistered_count(), 1);
-    assert_eq!(metrics.io_driver_fd_registered_count(), 2);
+    assert_eq!(metrics.io_driver_fd_registered_count(), 1);
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]

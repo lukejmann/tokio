@@ -5,8 +5,8 @@ name = "tokio_wasi"
 # - Update doc url
 #   - README.md
 # - Update CHANGELOG.md.
-# - Create "v1.0.x" git tag.
-version = "1.21.3"
+# - Create "v1.x.y" git tag.
+version = "1.23.0"
 edition = "2018"
 rust-version = "1.49"
 authors = ["Tokio Contributors <team@tokio.rs>"]
@@ -56,14 +56,11 @@ net = [
   "mio_wasi/os-ext",
   "mio_wasi/net",
   "socket2",
-  "winapi/fileapi",
-  "winapi/handleapi",
-  "winapi/namedpipeapi",
-  "winapi/winbase",
-  "winapi/winnt",
-  "winapi/minwindef",
-  "winapi/accctrl",
-  "winapi/aclapi",
+  "windows-sys/Win32_Foundation",
+  "windows-sys/Win32_Security",
+  "windows-sys/Win32_Storage_FileSystem",
+  "windows-sys/Win32_System_Pipes",
+  "windows-sys/Win32_System_SystemServices",
 ]
 process = [
   "bytes",
@@ -72,12 +69,9 @@ process = [
   "mio_wasi/os-ext",
   "mio_wasi/net",
   "signal-hook-registry",
-  "winapi/handleapi",
-  "winapi/minwindef",
-  "winapi/processthreadsapi",
-  "winapi/threadpoollegacyapiset",
-  "winapi/winbase",
-  "winapi/winnt",
+  "windows-sys/Win32_Foundation",
+  "windows-sys/Win32_System_Threading",
+  "windows-sys/Win32_System_WindowsProgramming",
 ]
 # Includes basic task execution capabilities
 rt = []
@@ -91,9 +85,8 @@ signal = [
   "mio_wasi/net",
   "mio_wasi/os-ext",
   "signal-hook-registry",
-  "winapi/consoleapi",
-  "winapi/wincon",
-  "winapi/minwindef",
+  "windows-sys/Win32_Foundation",
+  "windows-sys/Win32_System_Console",
 ]
 sync = []
 test-util = ["rt", "sync", "time"]
@@ -135,11 +128,16 @@ signal-hook-registry = { version = "1.1.1", optional = true }
 libc = { version = "0.2.42" }
 nix = { version = "0.24", default-features = false, features = ["fs", "socket"] }
 
-[target.'cfg(windows)'.dependencies.winapi]
-version = "0.3.8"
-default-features = false
-features = ["std"]
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "0.42.0"
 optional = true
+
+[target.'cfg(docsrs)'.dependencies.windows-sys]
+version = "0.42.0"
+features = [
+    "Win32_Foundation",
+    "Win32_Security_Authorization",
+]
 
 [target.'cfg(windows)'.dev-dependencies.ntapi]
 version = "0.3.6"
@@ -165,7 +163,7 @@ wasm-bindgen-test = "0.3.0"
 wasmedge_wasi_socket = "0.4.2"
 
 [target.'cfg(target_os = "freebsd")'.dev-dependencies]
-mio-aio = { version = "0.6.0", features = ["tokio"] }
+mio-aio = { version = "0.7.0", features = ["tokio"] }
 
 [target.'cfg(loom)'.dev-dependencies]
 loom = { version = "0.5.2", features = ["futures", "checkpoint"] }

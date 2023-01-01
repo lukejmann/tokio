@@ -4,7 +4,7 @@ name = "tokio-stream_wasi"
 # - Remove path dependencies
 # - Update CHANGELOG.md.
 # - Create "tokio-stream-0.1.x" git tag.
-version = "0.1.10"
+version = "0.1.11"
 edition = "2018"
 rust-version = "1.49"
 authors = ["Tokio Contributors <team@tokio.rs>"]
@@ -31,8 +31,8 @@ signal = ["tokio_wasi/signal"]
 [dependencies]
 futures-core = { version = "0.3.0" }
 pin-project-lite = "0.2.0"
-tokio_wasi = { path = "../tokio", features = ["sync"] }
-tokio-util_wasi = { path = "../tokio-util", optional = true }
+tokio_wasi = { path = "../tokio", version = "1.21", features = ["sync"] }
+tokio-util_wasi = { path = "../tokio-util", version = "0.7", optional = true }
 
 # [dev-dependencies]
 # tokio = { version = "1.2.0", path = "../tokio", features = ["full", "test-util"] }

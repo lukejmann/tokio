@@ -1,6 +1,6 @@
 use crate::runtime::handle::Handle;
 use crate::runtime::{blocking, driver, Callback, Runtime};
-use crate::util::{RngSeed, RngSeedGenerator};
+use crate::util::rand::{RngSeed, RngSeedGenerator};
 
 use std::fmt;
 use std::io;
@@ -44,6 +44,7 @@ pub struct Builder {
 
     /// Whether or not to enable the I/O driver
     enable_io: bool,
+    nevents: usize,
 
     /// Whether or not to enable the time driver
     enable_time: bool,
@@ -181,6 +182,7 @@ cfg_unstable! {
 
 pub(crate) type ThreadNameFn = std::sync::Arc<dyn Fn() -> String + Send + Sync + 'static>;
 
+#[derive(Clone, Copy)]
 pub(crate) enum Kind {
     CurrentThread,
     #[cfg(all(feature = "rt-multi-thread", not(tokio_wasi)))]
@@ -228,6 +230,7 @@ impl Builder {
 
             // I/O defaults to "off"
             enable_io: false,
+            nevents: 1024,
 
             // Time defaults to "off"
             enable_time: false,
@@ -235,6 +238,7 @@ impl Builder {
             // The clock starts not-paused
             start_paused: false,
 
+            // Read from environment variable first in multi-threaded mode.
             // Default to lazy auto-detection (one thread per CPU core)
             worker_threads: None,
 
@@ -301,6 +305,8 @@ impl Builder {
     ///
     /// This can be any number above 0 though it is advised to keep this value
     /// on the smaller side.
+    ///
+    /// This will override the value read from environment variable `TOKIO_WORKER_THREADS`.
     ///
     /// # Default
     ///
@@ -647,6 +653,7 @@ impl Builder {
             enable_io: self.enable_io,
             enable_time: self.enable_time,
             start_paused: self.start_paused,
+            nevents: self.nevents,
         }
     }
 
@@ -818,7 +825,7 @@ impl Builder {
         ///
         /// This configuration option is considered a workaround for the LIFO
         /// slot not being stealable. When the slot becomes stealable, we will
-        /// revisit whther or not this option is necessary. See
+        /// revisit whether or not this option is necessary. See
         /// tokio-rs/tokio#4941.
         ///
         /// # Examples
@@ -836,22 +843,19 @@ impl Builder {
             self
         }
 
-        /// Specifies the random number generation seed to use within all threads associated
-        /// with the runtime being built.
+        /// Specifies the random number generation seed to use within all
+        /// threads associated with the runtime being built.
         ///
-        /// This option is intended to make certain parts of the runtime deterministic.
-        /// Specifically, it affects the [`tokio::select!`] macro and the work stealing
-        /// algorithm. In the case of [`tokio::select!`] it will ensure that the order that
-        /// branches are polled is deterministic.
+        /// This option is intended to make certain parts of the runtime
+        /// deterministic (e.g. the [`tokio::select!`] macro). In the case of
+        /// [`tokio::select!`] it will ensure that the order that branches are
+        /// polled is deterministic.
         ///
-        /// In the case of work stealing, it's a little more complicated. Each worker will
-        /// be given a deterministic seed so that the starting peer for each work stealing
-        /// search will be deterministic.
-        ///
-        /// In addition to the code specifying `rng_seed` and interacting with the runtime,
-        /// the internals of Tokio and the Rust compiler may affect the sequences of random
-        /// numbers. In order to ensure repeatable results, the version of Tokio, the versions
-        /// of all other dependencies that interact with Tokio, and the Rust compiler version
+        /// In addition to the code specifying `rng_seed` and interacting with
+        /// the runtime, the internals of Tokio and the Rust compiler may affect
+        /// the sequences of random numbers. In order to ensure repeatable
+        /// results, the version of Tokio, the versions of all other
+        /// dependencies that interact with Tokio, and the Rust compiler version
         /// should also all remain constant.
         ///
         /// # Examples
@@ -875,7 +879,7 @@ impl Builder {
 
     fn build_current_thread_runtime(&mut self) -> io::Result<Runtime> {
         use crate::runtime::scheduler::{self, CurrentThread};
-        use crate::runtime::{Config, Scheduler};
+        use crate::runtime::{runtime::Scheduler, Config};
 
         let (driver, driver_handle) = driver::Driver::new(self.get_cfg())?;
 
@@ -891,7 +895,7 @@ impl Builder {
         // there are no futures ready to do something, it'll let the timer or
         // the reactor to generate some new stimuli for the futures to continue
         // in their life.
-        let scheduler = CurrentThread::new(
+        let (scheduler, handle) = CurrentThread::new(
             driver,
             driver_handle,
             blocking_spawner,
@@ -908,13 +912,15 @@ impl Builder {
             },
         );
 
-        let handle = scheduler::Handle::CurrentThread(scheduler.handle().clone());
+        let handle = Handle {
+            inner: scheduler::Handle::CurrentThread(handle),
+        };
 
-        Ok(Runtime {
-            scheduler: Scheduler::CurrentThread(scheduler),
-            handle: Handle { inner: handle },
+        Ok(Runtime::from_parts(
+            Scheduler::CurrentThread(scheduler),
+            handle,
             blocking_pool,
-        })
+        ))
     }
 }
 
@@ -937,6 +943,25 @@ cfg_io_driver! {
         /// ```
         pub fn enable_io(&mut self) -> &mut Self {
             self.enable_io = true;
+            self
+        }
+
+        /// Enables the I/O driver and configures the max number of events to be
+        /// processed per tick.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// use tokio::runtime;
+        ///
+        /// let rt = runtime::Builder::new_current_thread()
+        ///     .enable_io()
+        ///     .max_io_events_per_tick(1024)
+        ///     .build()
+        ///     .unwrap();
+        /// ```
+        pub fn max_io_events_per_tick(&mut self, capacity: usize) -> &mut Self {
+            self.nevents = capacity;
             self
         }
     }
@@ -994,7 +1019,7 @@ cfg_rt_multi_thread! {
     impl Builder {
         fn build_threaded_runtime(&mut self) -> io::Result<Runtime> {
             use crate::loom::sys::num_cpus;
-            use crate::runtime::{Config, Scheduler};
+            use crate::runtime::{Config, runtime::Scheduler};
             use crate::runtime::scheduler::{self, MultiThread};
 
             let core_threads = self.worker_threads.unwrap_or_else(num_cpus);
@@ -1010,7 +1035,7 @@ cfg_rt_multi_thread! {
             let seed_generator_1 = self.seed_generator.next_generator();
             let seed_generator_2 = self.seed_generator.next_generator();
 
-            let (scheduler, launch) = MultiThread::new(
+            let (scheduler, handle, launch) = MultiThread::new(
                 core_threads,
                 driver,
                 driver_handle,
@@ -1028,18 +1053,13 @@ cfg_rt_multi_thread! {
                 },
             );
 
-            let handle = scheduler::Handle::MultiThread(scheduler.handle().clone());
-            let handle = Handle { inner: handle };
+            let handle = Handle { inner: scheduler::Handle::MultiThread(handle) };
 
             // Spawn the thread pool workers
-            let _enter = crate::runtime::context::enter(handle.clone());
+            let _enter = handle.enter();
             launch.launch();
 
-            Ok(Runtime {
-                scheduler: Scheduler::MultiThread(scheduler),
-                handle,
-                blocking_pool,
-            })
+            Ok(Runtime::from_parts(Scheduler::MultiThread(scheduler), handle, blocking_pool))
         }
     }
 }
