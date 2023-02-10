@@ -181,24 +181,16 @@ cfg_net! {
 
             #[cfg(target_os = "wasi")]
             {
-                use std::io::{Error, ErrorKind};
-                MaybeReady(sealed::State::Blocking(crate::spawn(async move {
+                MaybeReady(sealed::State::Ready({
                     let host_and_port = s.split(":").collect::<Vec<&str>>();
-                    if host_and_port.len() != 2 {
-                        return Err(Error::new(
-                            ErrorKind::InvalidInput,
-                            "invalid socket address",
-                        ));
-                    }
                     let host = host_and_port[0];
-                    let port = str::parse::<u16>(host_and_port[1])
-                        .map_err(|e| Error::new(ErrorKind::InvalidInput, "invalid port value"))?;
-                    let mut addrs = wasmedge_wasi_socket::nslookup(host, "http")?;
+                    let port = str::parse::<u16>(host_and_port[1]).expect("invalid port value");
+                    let mut addrs = wasmedge_wasi_socket::nslookup(host, "http").expect("Fail to resolve url");
                     for addr in addrs.iter_mut() {
                         addr.set_port(port);
                     }
-                    Ok(addrs.into_iter())
-                })))
+                    addrs.into_iter().nth(0)
+                }))
             }
 
             #[cfg(not(target_os = "wasi"))]
@@ -241,13 +233,14 @@ cfg_net! {
 
             #[cfg(target_os = "wasi")]
             {
-                MaybeReady(sealed::State::Blocking(crate::spawn(async move {
-                    let mut addrs = wasmedge_wasi_socket::nslookup(&host, "http")?;
+                MaybeReady(sealed::State::Ready({
+                    let mut addrs = wasmedge_wasi_socket::nslookup(&host, "http").expect("Fail to resolve url");
                     for addr in addrs.iter_mut() {
                         addr.set_port(port);
                     }
-                    Ok(addrs.into_iter())
-                })))
+
+                    addrs.into_iter().nth(0)
+                }))
             }
 
             #[cfg(not(target_os = "wasi"))]
