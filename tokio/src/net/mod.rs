@@ -38,9 +38,10 @@ cfg_net! {
     pub use tcp::stream::TcpStream;
     cfg_not_wasi! {
         pub use tcp::socket::TcpSocket;
-
-        // mod udp;
-        // pub use udp::UdpSocket;
+        #[cfg(not(target_os = "wasi"))]
+        mod udp;
+        #[cfg(not(target_os = "wasi"))]
+        pub use udp::UdpSocket;
     }
 }
 

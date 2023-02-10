@@ -1,4 +1,7 @@
 use crate::net::{TcpListener, TcpStream};
+#[cfg(not(target_os = "wasi"))]
+use socket2;
+#[cfg(target_os = "wasi")]
 use wasmedge_wasi_socket::socket as socket2;
 
 use std::fmt;
@@ -122,7 +125,14 @@ impl TcpSocket {
     /// }
     /// ```
     pub fn new_v4() -> io::Result<TcpSocket> {
-        TcpSocket::new(socket2::AddressFamily::Inet4)
+        #[cfg(target_os = "wasi")]
+        {
+            TcpSocket::new(socket2::AddressFamily::Inet4)
+        }
+        #[cfg(not(target_os = "wasi"))]
+        {
+            TcpSocket::new(socket2::Domain::IPV4)
+        }
     }
 
     /// Creates a new socket configured for IPv6.
@@ -155,9 +165,16 @@ impl TcpSocket {
     /// }
     /// ```
     pub fn new_v6() -> io::Result<TcpSocket> {
-        TcpSocket::new(socket2::AddressFamily::Inet6)
+        #[cfg(target_os = "wasi")]
+        {
+            TcpSocket::new(socket2::AddressFamily::Inet6)
+        }
+        #[cfg(not(target_os = "wasi"))]
+        {
+            TcpSocket::new(socket2::Domain::IPV6)
+        }
     }
-
+    #[cfg(target_os = "wasi")]
     fn new(domain: socket2::AddressFamily) -> io::Result<TcpSocket> {
         let ty = socket2::SocketType::Stream;
         #[cfg(any(
@@ -172,6 +189,36 @@ impl TcpSocket {
         ))]
         let ty = ty.nonblocking();
         let inner = socket2::Socket::new(domain, ty)?;
+        #[cfg(not(any(
+            target_os = "android",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "illumos",
+            target_os = "linux",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        )))]
+        inner.set_nonblocking(true)?;
+        Ok(TcpSocket { inner })
+    }
+
+    ///
+    #[cfg(not(target_os = "wasi"))]
+    fn new(domain: socket2::Domain) -> io::Result<TcpSocket> {
+        let ty = socket2::Type::STREAM;
+        #[cfg(any(
+            target_os = "android",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "illumos",
+            target_os = "linux",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        ))]
+        let ty = ty.nonblocking();
+        let inner = socket2::Socket::new(domain, ty, Some(socket2::Protocol::TCP))?;
         #[cfg(not(any(
             target_os = "android",
             target_os = "dragonfly",
@@ -212,12 +259,18 @@ impl TcpSocket {
     ///     Ok(())
     /// }
     /// ```
+    #[cfg(target_os = "wasi")]
     pub fn set_reuseaddr(&self, _reuseaddr: bool) -> io::Result<()> {
         self.inner.setsockopt(
             socket2::SocketOptLevel::SolSocket,
             socket2::SocketOptName::SoReuseaddr,
             1i32,
         )
+    }
+    ///
+    #[cfg(not(target_os = "wasi"))]
+    pub fn set_reuseaddr(&self, reuseaddr: bool) -> io::Result<()> {
+        self.inner.set_reuse_address(reuseaddr)
     }
 
     /// Retrieves the value set for `SO_REUSEADDR` on this socket.
@@ -243,8 +296,14 @@ impl TcpSocket {
     /// }
     /// ```
     pub fn reuseaddr(&self) -> io::Result<bool> {
-        // self.inner.reuse_address()
-        Ok(true)
+        #[cfg(target_os = "wasi")]
+        {
+            Ok(true)
+        }
+        #[cfg(not(target_os = "wasi"))]
+        {
+            self.inner.reuse_address()
+        }
     }
 
     /// Allows the socket to bind to an in-use port. Only available for unix systems
@@ -519,8 +578,15 @@ impl TcpSocket {
     ///     Ok(())
     /// }
     /// ```
+    #[cfg(target_os = "wasi")]
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.inner.get_local().and_then(convert_address)
+    }
+
+    ///
+    #[cfg(not(target_os = "wasi"))]
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.inner.local_addr().and_then(convert_address)
     }
 
     /// Returns the value of the `SO_ERROR` option.
@@ -596,7 +662,7 @@ impl TcpSocket {
     /// }
     /// ```
     pub async fn connect(self, addr: SocketAddr) -> io::Result<TcpStream> {
-        if let Err(_err) = self.inner.connect(&addr.into()) {
+        if let Err(err) = self.inner.connect(&addr.into()) {
             #[cfg(unix)]
             if err.raw_os_error() != Some(libc::EINPROGRESS) {
                 return Err(err);
@@ -746,8 +812,20 @@ impl TcpSocket {
     }
 }
 
+#[cfg(target_os = "wasi")]
 fn convert_address(address: SocketAddr) -> io::Result<SocketAddr> {
     Ok(address)
+}
+
+#[cfg(not(target_os = "wasi"))]
+fn convert_address(address: socket2::SockAddr) -> io::Result<SocketAddr> {
+    match address.as_socket() {
+        Some(address) => Ok(address),
+        None => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid address family (not IPv4 or IPv6)",
+        )),
+    }
 }
 
 impl fmt::Debug for TcpSocket {
