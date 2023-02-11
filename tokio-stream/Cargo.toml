@@ -41,9 +41,6 @@ tokio-util_wasi = { path = "../tokio-util", version = "0.7", optional = true }
 # tokio-test = { path = "../tokio-test" }
 # futures = { version = "0.3", default-features = false }
 
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-proptest = "1"
-
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
