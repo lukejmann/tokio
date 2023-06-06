@@ -166,7 +166,6 @@ cfg_net! {
         type Future = sealed::MaybeReady;
 
         fn to_socket_addrs(&self, _: sealed::Internal) -> Self::Future {
-            use crate::blocking::spawn_blocking;
             use sealed::MaybeReady;
 
             // First check if the input parses as a socket address
@@ -181,20 +180,16 @@ cfg_net! {
 
             #[cfg(target_os = "wasi")]
             {
-                MaybeReady(sealed::State::Ready({
-                    let host_and_port = s.split(":").collect::<Vec<&str>>();
-                    let host = host_and_port[0];
-                    let port = str::parse::<u16>(host_and_port[1]).expect("invalid port value");
-                    let mut addrs = wasmedge_wasi_socket::nslookup(host, "http").expect("Fail to resolve url");
-                    for addr in addrs.iter_mut() {
-                        addr.set_port(port);
-                    }
-                    addrs.into_iter().nth(0)
+                 MaybeReady(sealed::State::Ready({
+                    let addrs = wasmedge_wasi_socket::ToSocketAddrs::to_socket_addrs(&s).ok();
+                    addrs.and_then(|mut addrs|{
+                        addrs.next()
+                    })
                 }))
             }
 
             #[cfg(not(target_os = "wasi"))]
-            MaybeReady(sealed::State::Blocking(spawn_blocking(move || {
+            MaybeReady(sealed::State::Blocking(crate::blocking::spawn_blocking(move || {
                 std::net::ToSocketAddrs::to_socket_addrs(&s)
             })))
         }
@@ -209,7 +204,6 @@ cfg_net! {
         type Future = sealed::MaybeReady;
 
         fn to_socket_addrs(&self, _: sealed::Internal) -> Self::Future {
-            use crate::blocking::spawn_blocking;
             use sealed::MaybeReady;
 
             let (host, port) = *self;
@@ -234,17 +228,15 @@ cfg_net! {
             #[cfg(target_os = "wasi")]
             {
                 MaybeReady(sealed::State::Ready({
-                    let mut addrs = wasmedge_wasi_socket::nslookup(&host, "http").expect("Fail to resolve url");
-                    for addr in addrs.iter_mut() {
-                        addr.set_port(port);
-                    }
-
-                    addrs.into_iter().nth(0)
+                    let addrs = wasmedge_wasi_socket::ToSocketAddrs::to_socket_addrs(&(&host[..], port)).ok();
+                    addrs.and_then(|mut addrs|{
+                        addrs.next()
+                    })
                 }))
             }
 
             #[cfg(not(target_os = "wasi"))]
-            MaybeReady(sealed::State::Blocking(spawn_blocking(move || {
+            MaybeReady(sealed::State::Blocking(crate::blocking::spawn_blocking(move || {
                 std::net::ToSocketAddrs::to_socket_addrs(&(&host[..], port))
             })))
         }
