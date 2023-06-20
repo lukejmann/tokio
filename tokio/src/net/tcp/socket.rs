@@ -8,13 +8,19 @@ use std::fmt;
 use std::io;
 use std::net::SocketAddr;
 
+#[cfg(all(unix, not(tokio_no_as_fd)))]
+use std::os::unix::io::{AsFd, BorrowedFd};
 #[cfg(unix)]
 use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 #[cfg(target_os = "wasi")]
 use std::os::wasi::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-#[cfg(windows)]
-use std::os::windows::io::{AsRawSocket, FromRawSocket, IntoRawSocket, RawSocket};
 use std::time::Duration;
+
+cfg_windows! {
+    use crate::os::windows::io::{AsRawSocket, FromRawSocket, IntoRawSocket, RawSocket};
+    #[cfg(not(tokio_no_as_fd))]
+    use crate::os::windows::io::{AsSocket, BorrowedSocket};
+}
 
 cfg_net! {
     /// A TCP socket that has not yet been converted to a `TcpStream` or
@@ -471,6 +477,53 @@ impl TcpSocket {
         Ok(Some(Duration::new(0, 0)))
     }
 
+    /// Sets the value of the `TCP_NODELAY` option on this socket.
+    ///
+    /// If set, this option disables the Nagle algorithm. This means that segments are always
+    /// sent as soon as possible, even if there is only a small amount of data. When not set,
+    /// data is buffered until there is a sufficient amount to send out, thereby avoiding
+    /// the frequent sending of small packets.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use tokio::net::TcpSocket;
+    ///
+    /// # async fn dox() -> Result<(), Box<dyn std::error::Error>> {
+    /// let socket = TcpSocket::new_v4()?;
+    ///
+    /// println!("{:?}", socket.nodelay()?);
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(not(target_os = "wasi"))]
+    pub fn set_nodelay(&self, nodelay: bool) -> io::Result<()> {
+        self.inner.set_nodelay(nodelay)
+    }
+
+    /// Gets the value of the `TCP_NODELAY` option on this socket.
+    ///
+    /// For more information about this option, see [`set_nodelay`].
+    ///
+    /// [`set_nodelay`]: TcpSocket::set_nodelay
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use tokio::net::TcpSocket;
+    ///
+    /// # async fn dox() -> Result<(), Box<dyn std::error::Error>> {
+    /// let stream = TcpSocket::new_v4()?;
+    ///
+    /// stream.set_nodelay(true)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(not(target_os = "wasi"))]
+    pub fn nodelay(&self) -> io::Result<bool> {
+        self.inner.nodelay()
+    }
+
     /// Gets the value of the `IP_TOS` option for this socket.
     ///
     /// For more information about this option, see [`set_tos`].
@@ -869,6 +922,13 @@ impl AsRawFd for TcpSocket {
     }
 }
 
+#[cfg(all(unix, not(tokio_no_as_fd)))]
+impl AsFd for TcpSocket {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        unsafe { BorrowedFd::borrow_raw(self.as_raw_fd()) }
+    }
+}
+
 #[cfg(unix)]
 impl FromRawFd for TcpSocket {
     /// Converts a `RawFd` to a `TcpSocket`.
@@ -890,30 +950,36 @@ impl IntoRawFd for TcpSocket {
     }
 }
 
-#[cfg(windows)]
-impl IntoRawSocket for TcpSocket {
-    fn into_raw_socket(self) -> RawSocket {
-        self.inner.into_raw_socket()
+cfg_windows! {
+    impl IntoRawSocket for TcpSocket {
+        fn into_raw_socket(self) -> RawSocket {
+            self.inner.into_raw_socket()
+        }
     }
-}
 
-#[cfg(windows)]
-impl AsRawSocket for TcpSocket {
-    fn as_raw_socket(&self) -> RawSocket {
-        self.inner.as_raw_socket()
+    impl AsRawSocket for TcpSocket {
+        fn as_raw_socket(&self) -> RawSocket {
+            self.inner.as_raw_socket()
+        }
     }
-}
 
-#[cfg(windows)]
-impl FromRawSocket for TcpSocket {
-    /// Converts a `RawSocket` to a `TcpStream`.
-    ///
-    /// # Notes
-    ///
-    /// The caller is responsible for ensuring that the socket is in
-    /// non-blocking mode.
-    unsafe fn from_raw_socket(socket: RawSocket) -> TcpSocket {
-        let inner = socket2::Socket::from_raw_socket(socket);
-        TcpSocket { inner }
+    #[cfg(not(tokio_no_as_fd))]
+    impl AsSocket for TcpSocket {
+        fn as_socket(&self) -> BorrowedSocket<'_> {
+            unsafe { BorrowedSocket::borrow_raw(self.as_raw_socket()) }
+        }
+    }
+
+    impl FromRawSocket for TcpSocket {
+        /// Converts a `RawSocket` to a `TcpStream`.
+        ///
+        /// # Notes
+        ///
+        /// The caller is responsible for ensuring that the socket is in
+        /// non-blocking mode.
+        unsafe fn from_raw_socket(socket: RawSocket) -> TcpSocket {
+            let inner = socket2::Socket::from_raw_socket(socket);
+            TcpSocket { inner }
+        }
     }
 }

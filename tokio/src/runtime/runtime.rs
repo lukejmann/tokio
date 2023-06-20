@@ -240,6 +240,13 @@ impl Runtime {
     /// complete, and yielding its resolved result. Any tasks or timers
     /// which the future spawns internally will be executed on the runtime.
     ///
+    /// # Non-worker future
+    ///
+    /// Note that the future required by this function does not run as a
+    /// worker. The expectation is that other tasks are spawned by the future here.
+    /// Awaiting on other futures from the future provided here will not
+    /// perform as fast as those spawned as workers.
+    ///
     /// # Multi thread scheduler
     ///
     /// When the multi thread scheduler is used this will allow futures
@@ -281,6 +288,15 @@ impl Runtime {
     /// [handle]: fn@Handle::block_on
     #[track_caller]
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        #[cfg(all(
+            tokio_unstable,
+            tokio_taskdump,
+            feature = "rt",
+            target_os = "linux",
+            any(target_arch = "aarch64", target_arch = "x86", target_arch = "x86_64")
+        ))]
+        let future = super::task::trace::Trace::root(future);
+
         #[cfg(all(tokio_unstable, feature = "tracing"))]
         let future = crate::util::trace::task(
             future,

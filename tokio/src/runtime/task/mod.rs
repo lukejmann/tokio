@@ -182,10 +182,8 @@ mod id;
 #[cfg_attr(not(tokio_unstable), allow(unreachable_pub))]
 pub use id::{id, try_id, Id};
 
-cfg_rt_multi_thread! {
-    mod inject;
-    pub(super) use self::inject::Inject;
-}
+mod inject;
+pub(super) use self::inject::Inject;
 
 #[cfg(feature = "rt")]
 mod abort;
@@ -206,6 +204,10 @@ mod state;
 use self::state::State;
 
 mod waker;
+
+cfg_taskdump! {
+    pub(crate) mod trace;
+}
 
 use crate::future::Future;
 use crate::util::linked_list;
@@ -340,6 +342,17 @@ impl<S: 'static> Task<S> {
         }
     }
 
+    #[cfg(all(
+        tokio_unstable,
+        tokio_taskdump,
+        feature = "rt",
+        target_os = "linux",
+        any(target_arch = "aarch64", target_arch = "x86", target_arch = "x86_64")
+    ))]
+    pub(super) fn as_raw(&self) -> RawTask {
+        self.raw
+    }
+
     fn header(&self) -> &Header {
         self.raw.header()
     }
@@ -355,25 +368,23 @@ impl<S: 'static> Notified<S> {
     }
 }
 
-cfg_rt_multi_thread! {
-    impl<S: 'static> Notified<S> {
-        unsafe fn from_raw(ptr: NonNull<Header>) -> Notified<S> {
-            Notified(Task::from_raw(ptr))
-        }
+impl<S: 'static> Notified<S> {
+    unsafe fn from_raw(ptr: NonNull<Header>) -> Notified<S> {
+        Notified(Task::from_raw(ptr))
     }
+}
 
-    impl<S: 'static> Task<S> {
-        fn into_raw(self) -> NonNull<Header> {
-            let ret = self.raw.header_ptr();
-            mem::forget(self);
-            ret
-        }
+impl<S: 'static> Task<S> {
+    fn into_raw(self) -> NonNull<Header> {
+        let ret = self.raw.header_ptr();
+        mem::forget(self);
+        ret
     }
+}
 
-    impl<S: 'static> Notified<S> {
-        fn into_raw(self) -> NonNull<Header> {
-            self.0.into_raw()
-        }
+impl<S: 'static> Notified<S> {
+    fn into_raw(self) -> NonNull<Header> {
+        self.0.into_raw()
     }
 }
 

@@ -7,11 +7,18 @@ use std::cell::Cell;
 use crate::util::rand::{FastRand, RngSeed};
 
 cfg_rt! {
+    mod scoped;
+    use scoped::Scoped;
+
     use crate::runtime::{scheduler, task::Id, Defer};
 
     use std::cell::RefCell;
     use std::marker::PhantomData;
     use std::time::Duration;
+
+    cfg_taskdump! {
+        use crate::runtime::task::trace;
+    }
 }
 
 struct Context {
@@ -22,6 +29,10 @@ struct Context {
     /// Handle to the runtime scheduler running on the current thread.
     #[cfg(feature = "rt")]
     handle: RefCell<Option<scheduler::Handle>>,
+
+    /// Handle to the scheduler's internal "context"
+    #[cfg(feature = "rt")]
+    scheduler: Scoped<scheduler::Context>,
 
     #[cfg(feature = "rt")]
     current_task_id: Cell<Option<Id>>,
@@ -45,6 +56,15 @@ struct Context {
     /// Tracks the amount of "work" a task may still do before yielding back to
     /// the sheduler
     budget: Cell<coop::Budget>,
+
+    #[cfg(all(
+        tokio_unstable,
+        tokio_taskdump,
+        feature = "rt",
+        target_os = "linux",
+        any(target_arch = "aarch64", target_arch = "x86", target_arch = "x86_64")
+    ))]
+    trace: trace::Context,
 }
 
 tokio_thread_local! {
@@ -57,6 +77,11 @@ tokio_thread_local! {
             /// accessing drivers, etc...
             #[cfg(feature = "rt")]
             handle: RefCell::new(None),
+
+            /// Tracks the current scheduler internal context
+            #[cfg(feature = "rt")]
+            scheduler: Scoped::new(),
+
             #[cfg(feature = "rt")]
             current_task_id: Cell::new(None),
 
@@ -75,11 +100,24 @@ tokio_thread_local! {
             rng: FastRand::new(RngSeed::new()),
 
             budget: Cell::new(coop::Budget::unconstrained()),
+
+            #[cfg(all(
+                tokio_unstable,
+                tokio_taskdump,
+                feature = "rt",
+                target_os = "linux",
+                any(
+                    target_arch = "aarch64",
+                    target_arch = "x86",
+                    target_arch = "x86_64"
+                )
+            ))]
+            trace: trace::Context::new(),
         }
     }
 }
 
-#[cfg(feature = "macros")]
+#[cfg(any(feature = "macros", all(feature = "sync", feature = "rt")))]
 pub(crate) fn thread_rng_n(n: u32) -> u32 {
     CONTEXT.with(|ctx| ctx.rng.fastrand_n(n))
 }
@@ -156,9 +194,13 @@ cfg_rt! {
         CONTEXT.try_with(|ctx| ctx.current_task_id.get()).unwrap_or(None)
     }
 
-    pub(crate) fn try_current() -> Result<scheduler::Handle, TryCurrentError> {
-        match CONTEXT.try_with(|ctx| ctx.handle.borrow().clone()) {
-            Ok(Some(handle)) => Ok(handle),
+    pub(crate) fn with_current<F, R>(f: F) -> Result<R, TryCurrentError>
+    where
+        F: FnOnce(&scheduler::Handle) -> R,
+    {
+
+        match CONTEXT.try_with(|ctx| ctx.handle.borrow().as_ref().map(f)) {
+            Ok(Some(ret)) => Ok(ret),
             Ok(None) => Err(TryCurrentError::new_no_context()),
             Err(_access_error) => Err(TryCurrentError::new_thread_local_destroyed()),
         }
@@ -255,6 +297,15 @@ cfg_rt! {
             let mut defer = c.defer.borrow_mut();
             defer.as_mut().map(f)
         })
+    }
+
+    pub(super) fn set_scheduler<R>(v: &scheduler::Context, f: impl FnOnce() -> R) -> R {
+        CONTEXT.with(|c| c.scheduler.set(v, f))
+    }
+
+    #[track_caller]
+    pub(super) fn with_scheduler<R>(f: impl FnOnce(Option<&scheduler::Context>) -> R) -> R {
+        CONTEXT.with(|c| c.scheduler.with(f))
     }
 
     impl Context {
@@ -376,6 +427,14 @@ cfg_rt! {
     impl EnterRuntime {
         pub(crate) fn is_entered(self) -> bool {
             matches!(self, EnterRuntime::Entered { .. })
+        }
+    }
+
+    cfg_taskdump! {
+        /// SAFETY: Callers of this function must ensure that trace frames always
+        /// form a valid linked list.
+        pub(crate) unsafe fn with_trace<R>(f: impl FnOnce(&trace::Context) -> R) -> R {
+            CONTEXT.with(|c| f(&c.trace))
         }
     }
 }

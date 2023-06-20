@@ -1,5 +1,8 @@
 //! Multi-threaded runtime
 
+mod counters;
+use counters::Counters;
+
 mod handle;
 pub(crate) use handle::Handle;
 
@@ -12,7 +15,7 @@ pub(crate) use park::{Parker, Unparker};
 pub(crate) mod queue;
 
 mod worker;
-pub(crate) use worker::Launch;
+pub(crate) use worker::{Context, Launch};
 
 pub(crate) use worker::block_in_place;
 

@@ -4,9 +4,9 @@ name = "tokio-stream_wasi"
 # - Remove path dependencies
 # - Update CHANGELOG.md.
 # - Create "tokio-stream-0.1.x" git tag.
-version = "0.1.11"
-edition = "2018"
-rust-version = "1.49"
+version = "0.1.14"
+edition = "2021"
+rust-version = "1.56"
 authors = ["Tokio Contributors <team@tokio.rs>"]
 license = "MIT"
 repository = "https://github.com/tokio-rs/tokio"
@@ -21,6 +21,17 @@ path = "src/lib.rs"
 
 [features]
 default = ["time"]
+
+
+full = [
+    "time",
+    "net",
+    "io-util",
+    "fs",
+    "sync",
+    "signal"
+]
+
 time = ["tokio_wasi/time"]
 net = ["tokio_wasi/net"]
 io-util = ["tokio_wasi/io-util"]
