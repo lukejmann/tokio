@@ -1,5 +1,5 @@
 [package]
-name = "tokio_wasi"
+name = "tokio"
 # When releasing to crates.io:
 # - Remove path dependencies
 # - Update doc url
